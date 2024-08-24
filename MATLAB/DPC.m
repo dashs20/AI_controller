@@ -1,8 +1,8 @@
 % Define IC and cart properties
-IC = [0,-1,deg2rad(20),0,deg2rad(-20),0]; % [x,dx,t1,dt1,t2,dt2]
-cart_properties = [0.1  ,1,1,1,3]; % [m,m1,m2,l1,l2]
+IC = [0,0,0,0,0,0]; % [x,dx,t1,dt1,t2,dt2]
+cart_properties = [50,1,1,1,1]; % [m,m1,m2,l1,l2]
 g = 9.81;
-F = 0;
+F = 1;
 
 % define simulation options
 op = odeset('abstol',1e-13,'reltol',1e-13); % propegation options
@@ -20,6 +20,16 @@ for i = 1:length(t)
     clf
 end
 close(obj)
+
+figure()
+% plot pendulum-cart time history
+subplot(2,1,1)
+plot(t,state(:,1))
+
+subplot(2,1,2)
+plot(t,state(:,3))
+hold on
+plot(t,state(:,5))
 
 function dstate = DPC_dynamics_model(cart_properties,state,g,F)
 % CREDIT FOR MATH: TU Berlin
@@ -39,19 +49,28 @@ dt1 = state(4);
 t2 = state(5);
 dt2 = state(6);
 
-% calculate M(y) matrix
-My = [m + m1 + m1, l1*(m1 + m2)*cos(t1), m2*l2*cos(t2);...
-      l1 * (m1 + m2) * cos(t1), l1^2 * (m1 + m2), l1 * l2 * m2 * cos(t1 - t2);...
-      l2 * m2 * cos(t2), l1 * l2 * m2 * cos(t1 - t2), l2^2 * m2];
+% Calculate M matrix
+M = [m + m1 + m2, l1 * (m1 + m2)*cos(t1), m2 * l2 * cos(t2);...
+     l1 * (m1 + m2) * cos(t1), l1^2 * (m1 + m2), l1 * l2 * m2 * cos(t1 - t2);...
+     l2 * m2 * cos(t2), l1 * l2 * m2 * cos(t1 - t2), l2^2 * m2];
 
-% calculate RHS
-RHS1 = [l1 * (m1 + m2) * dt1^2 * sin(t1) + m2 * l2 * dt2^2 * sin(dt2);...
-       -l1 * l2 * m2 * dt2^2 * sin(t1 - t2) + g * (m1 + m2) * l1 * sin(t1);...
-        l1 * l2 * m2 * dt1^2 * sin(t1 - t2) + g * l2 * m2 * sin(t2)];
-RHS2 = [F;0;0];
+% Calculate G vector
+G = [l1 * (m1 + m2) * dt1^2 * sin(t1) + m2 * l2 * dt2^2 * sin(t2);...
+    -l1 * l2 * m2 * dt2^2 * sin(t1 - t2) + g * (m1 + m2) * l1 * sin(t1);...
+     l1 * l2 * m2 * dt1^2 * sin(t1-t2) + g * l2 * m2 * sin(t2)];
 
-% calculate vector of derivatives
-result = inv(My) * RHS1 + RHS2;
+% Calculate D vector
+d1 = 0.1;
+d2 = 0.1;
+d3 = 0.1;
+D = [d1 * dx;...
+     d2 * dt1;...
+     d3 * dt2];
+
+% Calculate input vector
+I = [F;0;0];
+
+result = inv(M) * (G - D + I);
 ddx = result(1);
 ddt1 = result(2);
 ddt2 = result(3);

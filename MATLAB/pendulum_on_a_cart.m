@@ -4,7 +4,7 @@ m = 1;
 M = 2;
 g = 9.81;
 L = 0.25;
-IC = [-L,0,deg2rad(5),0,0,0]; % 5th thing is position integral IV
+IC = [0,0,0,0,0,0]; % 5th thing is position integral IV
 
 % simulate
 tvec = linspace(0,10,1000);
@@ -52,7 +52,7 @@ Dp = -5;
 Fopt_angle = Pa * c + Ia * f + Da * d;
 Fopt_position = Pp * a + Ip * e + Dp * b;
 
-Fopt = Fopt_angle + Fopt_position;
+Fopt = -0.1
 
 da = b;
 dc = d;
