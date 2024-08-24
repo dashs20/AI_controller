@@ -37,12 +37,23 @@ def DPC_dynamics(state,static):
     RHS1[1] = -l1 * l2 * m2 * dt2**2 * np.sin(t1 - t2) + g * (m1 + m2) * l1 * np.sin(t1)
     RHS1[2] = l1 * l2 * m2 * dt1**2 * np.sin(t1 - t2) + g * l2 * m2 * np.sin(t2)
 
+    # calculate RHS2 components
     RHS2 = np.zeros([3,1])
-
     RHS2[0] = F
 
+    # calculate RHS3 components
+    RHS3 = np.zeros([3,1])
+
+    d1 = 0.1
+    d2 = 0.1
+    d3 = 0.1
+
+    RHS3[0] = d1 * dx
+    RHS3[1] = d2 * dt1
+    RHS3[2] = d3 * dt2
+
     # calculate ddx, ddt1 and ddt2
-    result = np.matmul(np.linalg.inv(My_matrix),RHS1 + RHS2)
+    result = np.matmul(np.linalg.inv(My_matrix),RHS1 + RHS2 - RHS3)
 
     # return dstate
 
@@ -94,7 +105,20 @@ def run_cart(genomes,config):
         # iterate through all the pendulums
         for j in range(len(genomes)):
             # Step each system with input force from neural net
-            static[1] = nets[j].activate(cur_states[j,:])[0] * 200
+            # obtain input parameters for the neural net
+            params = np.zeros(9)
+
+            params[0] = cur_states[j,0] # cart position
+            params[1] = cur_states[j,1] # cart velocity
+            params[2] = cur_states[j,3] # theta 1 dot
+            params[3] = cur_states[j,5] # theta 2 dot
+            params[4] = np.sin(cur_states[j,2]) * cart_properties[3] # pend 1 x
+            params[5] = np.cos(cur_states[j,2]) * cart_properties[3] # pend 1 y
+            params[6] = params[4] + np.sin(cur_states[j,4]) * cart_properties[4] # pend 2 x
+            params[7] = params[4] + np.cos(cur_states[j,4]) * cart_properties[4] # pend 2 y
+            params[8] = params[4] * params[6] + params[5] * params[7] # dot(dir 1, dir 2)
+
+            static[1] = nets[j].activate(params)[0] * 200
 
             # keep cart in bounds
             if(cur_states[j,0] < cart_bounds[0]):
