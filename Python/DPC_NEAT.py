@@ -1,8 +1,8 @@
 import numpy as np
 from custom_rk45 import rk45_step
 import neat
-import matplotlib.pyplot as plt
 import pickle
+import scipy.io as sio
 
 # Pendulum Dynamics Model
 def DPC_dynamics(state,static):
@@ -44,9 +44,9 @@ def DPC_dynamics(state,static):
     # calculate RHS3 components
     RHS3 = np.zeros([3,1])
 
-    d1 = 0.1
-    d2 = 0.1
-    d3 = 0.1
+    d1 = 0
+    d2 = 0.5
+    d3 = 0.5
 
     RHS3[0] = d1 * dx
     RHS3[1] = d2 * dt1
@@ -65,15 +65,15 @@ def run_cart(genomes,config):
     cart_properties = np.array([5,0.5,0.5,1,1]) # [m,m1,m2,l1,l2]
 
     # Define physical constants
-    g = 1 # gravity
+    g = 2 # gravity
     F = 0
 
     static = [cart_properties,F,g]
 
     # Define simulation
-    IC = np.array([0,0,np.pi*0.9,0,np.pi*1.1,0]) # [x, dx, t1, dt1, t2, dt2] where t is theta (rad)
-    max_time = 60 # seconds
-    steps = max_time * 1000
+    IC = np.array([0,0,np.pi,0,np.pi,0]) # [x, dx, t1, dt1, t2, dt2] where t is theta (rad)
+    max_time = 10 # seconds
+    steps = max_time * 300
     tvec = np.linspace(0,max_time,steps)
     dt = max_time/steps
     cart_bounds = [-10,10]
@@ -101,9 +101,9 @@ def run_cart(genomes,config):
     generation += 1
 
     # loop for 1 seconds
-    for i in range(steps):
+    for j in range(len(genomes)):
         # iterate through all the pendulums
-        for j in range(len(genomes)):
+        for i in range(steps):
             # Step each system with input force from neural net
             # obtain input parameters for the neural net
             params = np.zeros(9)
@@ -118,18 +118,15 @@ def run_cart(genomes,config):
             params[7] = params[4] + np.cos(cur_states[j,4]) * cart_properties[4] # pend 2 y
             params[8] = params[4] * params[6] + params[5] * params[7] # dot(dir 1, dir 2)
 
-            static[1] = nets[j].activate(params)[0] * 200
+            static[1] = nets[j].activate(params)[0] * 500
 
-            # keep cart in bounds
-            if(cur_states[j,0] < cart_bounds[0]):
-                cur_states[j,0] = cart_bounds[0]
-                cur_states[j,1] = 0
-                static[1] = -(cur_states[j,0] - cart_bounds[0]) * 10000
-            
-            if(cur_states[j,0] > cart_bounds[1]):
-                cur_states[j,0] = cart_bounds[1]
-                cur_states[j,1] = 0
-                static[1] = -(cur_states[j,0] - cart_bounds[1]) * 10000
+            # kill the agent if it hits the wall
+            if(cur_states[j,0] < cart_bounds[0] or cur_states[j,0] > cart_bounds[1]):
+                break
+
+            # kill the agent if it swings the pendulum around more than once
+            if((cur_states[j,2]) > (IC[2] + (2 * np.pi)) or (cur_states[j,2]) < (IC[2] - (2 * np.pi))):
+                break
 
             # step cart along
             cur_states[j,:] = rk45_step(DPC_dynamics,cur_states[j,:],dt,static)
@@ -137,36 +134,37 @@ def run_cart(genomes,config):
             force_hists[j][i] = static[1]
 
             # update fitness
-            if(np.cos(cur_states[j,2])*cart_properties[3] + np.cos(cur_states[j,4])*cart_properties[4] > 0.9*(cart_properties[3]+cart_properties[4])):
-                genomes[j][1].fitness += 1 * dt
+            def fitness_func(cur_states,cart_properties,dt,cart_bounds):
+                tip_height = np.cos(cur_states[j,2])*cart_properties[3] + np.cos(cur_states[j,4])*cart_properties[4]
+                pend_length = cart_properties[3]+cart_properties[4]
 
-    # Pickle time histories in case anything good comes out.
-    with open(f'prev_runs/time_hists{generation}.pkl', 'wb') as f:  # open a text file
-        pickle.dump(time_hists, f) # serialize the list
+                # incentivise keeping the pendulum high up
+                n = 6
+                height_component = ((tip_height + pend_length)**n) / (2**n * pend_length**n)
 
-    with open(f'prev_runs/force_hists{generation}.pkl', 'wb') as f:  # open a text file
-        pickle.dump(force_hists, f) # serialize the list
+                # incentivise staying close to the center, but not as much as keeping the pendulum up
+                center_component = (-np.absolute(cur_states[j,0]) + cart_bounds[1])/cart_bounds[1] * 1/6
 
-    with open(f'prev_runs/tvec{generation}.pkl', 'wb') as f:  # open a text file
-        pickle.dump(tvec, f) # serialize the list
+                score = (height_component + center_component) * dt
 
-    # plot results
-    # for i in range(len(genomes)):
-    #     plt.plot(tvec,time_hists[i][:,0])
+                return score
 
-    # plt.figure()
-    # for i in range(len(genomes)):
-    #         plt.plot(tvec,time_hists[i][:,2])
+            genomes[j][1].fitness += fitness_func(cur_states,cart_properties,dt,cart_bounds)
+            if(genomes[j][1].fitness < -100):
+                break
 
-    # plt.figure()
-    # for i in range(len(genomes)):
-    #     plt.plot(tvec,time_hists[i][:,4])
+    # locate fittest agent
+    fitnesses = list()
+    for i in range(len(genomes)):
+        fitnesses.append(genomes[i][1].fitness)
+    
+    best_agent_index = np.argmax(fitnesses)
 
-    # plt.figure()
-    # for i in range(len(genomes)):
-    #     plt.plot(tvec,force_hists[i][:])
+    best_timehist = time_hists[best_agent_index]
+    best_forcehist = force_hists[best_agent_index]
 
-    # plt.show()
+    # save history to mat_files folder for post analysis.
+    sio.savemat(f'../MATLAB/mat_files/result{generation}.mat', {'th':best_timehist,'tvec':tvec,'fh':best_forcehist})
 
 if __name__ == "__main__":
     generation = 0
