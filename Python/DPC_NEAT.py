@@ -62,10 +62,10 @@ def DPC_dynamics(state,static):
 # Cart Run Function
 def run_cart(genomes,config):
     # Define Cart
-    cart_properties = np.array([5,0.5,0.5,1,1]) # [m,m1,m2,l1,l2]
+    cart_properties = np.array([5,0.1,0.1,1,1]) # [m,m1,m2,l1,l2]
 
     # Define physical constants
-    g = 2 # gravity
+    g = 1 # gravity
     F = 0
 
     static = [cart_properties,F,g]
@@ -73,7 +73,7 @@ def run_cart(genomes,config):
     # Define simulation
     IC = np.array([0,0,np.pi,0,np.pi,0]) # [x, dx, t1, dt1, t2, dt2] where t is theta (rad)
     max_time = 10 # seconds
-    steps = max_time * 300
+    steps = max_time * 1000
     tvec = np.linspace(0,max_time,steps)
     dt = max_time/steps
     cart_bounds = [-10,10]
@@ -109,6 +109,9 @@ def run_cart(genomes,config):
             # obtain input parameters for the neural net
             params = np.zeros(9)
 
+            # [pos, vel, t1, dt1, t2, dt2]
+            # [0    1    2   3    4   5  ]
+
             params[0] = cur_states[j,0] # cart position
             params[1] = cur_states[j,1] # cart velocity
             params[2] = cur_states[j,3] # theta 1 dot
@@ -116,17 +119,13 @@ def run_cart(genomes,config):
             params[4] = np.sin(cur_states[j,2]) * cart_properties[3] # pend 1 x
             params[5] = np.cos(cur_states[j,2]) * cart_properties[3] # pend 1 y
             params[6] = params[4] + np.sin(cur_states[j,4]) * cart_properties[4] # pend 2 x
-            params[7] = params[4] + np.cos(cur_states[j,4]) * cart_properties[4] # pend 2 y
+            params[7] = params[5] + np.cos(cur_states[j,4]) * cart_properties[4] # pend 2 y
             params[8] = params[4] * params[6] + params[5] * params[7] # dot(dir 1, dir 2)
 
             static[1] = nets[j].activate(params)[0] * 500
 
             # kill the agent if it hits the wall
             if(cur_states[j,0] < cart_bounds[0] or cur_states[j,0] > cart_bounds[1]):
-                break
-
-            # kill the agent if it swings the pendulum around more than once
-            if((cur_states[j,2]) > (IC[2] + (2 * np.pi)) or (cur_states[j,2]) < (IC[2] - (2 * np.pi))):
                 break
 
             # once the pendulum is up, if it falls, kill the agent.
@@ -147,16 +146,11 @@ def run_cart(genomes,config):
                 tip_height = np.cos(cur_states[j,2])*cart_properties[3] + np.cos(cur_states[j,4])*cart_properties[4]
                 pend_length = cart_properties[3]+cart_properties[4]
 
-                # incentivise keeping the pendulum high up
-                # n = 6
-                # height_component = ((tip_height + pend_length)**n) / (2**n * pend_length**n)
-                height_component = 0
-                if(tip_height > 0.95 * pend_length):
-                    height_component = 1
-
-                # incentivise staying close to the center, but not as much as keeping the pendulum up
                 if(up):
-                    center_component = (-np.absolute(cur_states[j,0]) + cart_bounds[1])/cart_bounds[1] * 1/6
+                    # incentivise staying close to the center, but not as much as keeping the pendulum up
+                    center_component = (-np.absolute(cur_states[j,0]) + cart_bounds[1])/cart_bounds[1]
+                    # incentivise being up in the 1st place.
+                    height_component = 1
                 else:
                     center_component = 0
 
