@@ -45,8 +45,8 @@ def DPC_dynamics(state,static):
     RHS3 = np.zeros([3,1])
 
     d1 = 0
-    d2 = 0.5
-    d3 = 0.5
+    d2 = 0.1
+    d3 = 0.1
 
     RHS3[0] = d1 * dx
     RHS3[1] = d2 * dt1
@@ -103,6 +103,7 @@ def run_cart(genomes,config):
     # loop for 1 seconds
     for j in range(len(genomes)):
         # iterate through all the pendulums
+        up = False
         for i in range(steps):
             # Step each system with input force from neural net
             # obtain input parameters for the neural net
@@ -128,30 +129,42 @@ def run_cart(genomes,config):
             if((cur_states[j,2]) > (IC[2] + (2 * np.pi)) or (cur_states[j,2]) < (IC[2] - (2 * np.pi))):
                 break
 
+            # once the pendulum is up, if it falls, kill the agent.
+            tip_height = np.cos(cur_states[j,2])*cart_properties[3] + np.cos(cur_states[j,4])*cart_properties[4]
+            pend_length = cart_properties[3]+cart_properties[4]
+            if(tip_height > 0.95 * pend_length):
+                up = True
+            if(up == True and tip_height < 0.95 * pend_length):
+                break
+
             # step cart along
             cur_states[j,:] = rk45_step(DPC_dynamics,cur_states[j,:],dt,static)
             time_hists[j][i,:] = cur_states[j,:]
             force_hists[j][i] = static[1]
 
             # update fitness
-            def fitness_func(cur_states,cart_properties,dt,cart_bounds):
+            def fitness_func(cur_states,cart_properties,dt,cart_bounds,up):
                 tip_height = np.cos(cur_states[j,2])*cart_properties[3] + np.cos(cur_states[j,4])*cart_properties[4]
                 pend_length = cart_properties[3]+cart_properties[4]
 
                 # incentivise keeping the pendulum high up
-                n = 6
-                height_component = ((tip_height + pend_length)**n) / (2**n * pend_length**n)
+                # n = 6
+                # height_component = ((tip_height + pend_length)**n) / (2**n * pend_length**n)
+                height_component = 0
+                if(tip_height > 0.95 * pend_length):
+                    height_component = 1
 
                 # incentivise staying close to the center, but not as much as keeping the pendulum up
-                center_component = (-np.absolute(cur_states[j,0]) + cart_bounds[1])/cart_bounds[1] * 1/6
+                if(up):
+                    center_component = (-np.absolute(cur_states[j,0]) + cart_bounds[1])/cart_bounds[1] * 1/6
+                else:
+                    center_component = 0
 
                 score = (height_component + center_component) * dt
 
                 return score
 
-            genomes[j][1].fitness += fitness_func(cur_states,cart_properties,dt,cart_bounds)
-            if(genomes[j][1].fitness < -100):
-                break
+            genomes[j][1].fitness += fitness_func(cur_states,cart_properties,dt,cart_bounds,up)
 
     # locate fittest agent
     fitnesses = list()
@@ -183,4 +196,4 @@ if __name__ == "__main__":
     p.add_reporter(stats)
 
     # Run NEAT
-    p.run(run_cart, 1000)
+    p.run(run_cart, 10000)
