@@ -142,23 +142,19 @@ def run_cart(genomes,config):
             force_hists[j][i] = static[1]
 
             # update fitness
-            def fitness_func(cur_states,cart_properties,dt,cart_bounds,up):
-                tip_height = np.cos(cur_states[j,2])*cart_properties[3] + np.cos(cur_states[j,4])*cart_properties[4]
-                pend_length = cart_properties[3]+cart_properties[4]
+            def fitness_func(cur_states,dt,cart_bounds,up):
 
                 if(up):
                     # incentivise staying close to the center, but not as much as keeping the pendulum up
                     center_component = (-np.absolute(cur_states[j,0]) + cart_bounds[1])/cart_bounds[1]
                     # incentivise being up in the 1st place.
                     height_component = 1
+                    score = (height_component + center_component) * dt
+                    return score
                 else:
-                    center_component = 0
+                    return 0
 
-                score = (height_component + center_component) * dt
-
-                return score
-
-            genomes[j][1].fitness += fitness_func(cur_states,cart_properties,dt,cart_bounds,up)
+            genomes[j][1].fitness += fitness_func(cur_states,dt,cart_bounds,up)
 
     # locate fittest agent
     fitnesses = list()
