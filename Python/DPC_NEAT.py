@@ -45,8 +45,8 @@ def DPC_dynamics(state,static):
     RHS3 = np.zeros([3,1])
 
     d1 = 0
-    d2 = 0.1
-    d3 = 0.1
+    d2 = 0.2
+    d3 = 0.2
 
     RHS3[0] = d1 * dx
     RHS3[1] = d2 * dt1
@@ -72,8 +72,8 @@ def run_cart(genomes,config):
 
     # Define simulation
     IC = np.array([0,0,np.pi,0,np.pi,0]) # [x, dx, t1, dt1, t2, dt2] where t is theta (rad)
-    max_time = 10 # seconds
-    steps = max_time * 1000
+    max_time = 30 # seconds
+    steps = max_time * 60
     tvec = np.linspace(0,max_time,steps)
     dt = max_time/steps
     cart_bounds = [-10,10]
@@ -107,7 +107,7 @@ def run_cart(genomes,config):
         for i in range(steps):
             # Step each system with input force from neural net
             # obtain input parameters for the neural net
-            params = np.zeros(9)
+            params = np.zeros(11)
 
             # [pos, vel, t1, dt1, t2, dt2]
             # [0    1    2   3    4   5  ]
@@ -121,11 +121,17 @@ def run_cart(genomes,config):
             params[6] = params[4] + np.sin(cur_states[j,4]) * cart_properties[4] # pend 2 x
             params[7] = params[5] + np.cos(cur_states[j,4]) * cart_properties[4] # pend 2 y
             params[8] = params[4] * params[6] + params[5] * params[7] # dot(dir 1, dir 2)
+            params[9] = cur_states[j,2] # theta 1
+            params[10] = cur_states[j,4] # theta 2
 
             static[1] = nets[j].activate(params)[0] * 500
 
             # kill the agent if it hits the wall
             if(cur_states[j,0] < cart_bounds[0] or cur_states[j,0] > cart_bounds[1]):
+                break
+
+            # kill the agent if it tries to swing it around
+            if(cur_states[j,2] > IC[2] + np.pi * 2 or cur_states[j,2] < IC[2] - np.pi * 2):
                 break
 
             # once the pendulum is up, if it falls, kill the agent.
@@ -142,19 +148,23 @@ def run_cart(genomes,config):
             force_hists[j][i] = static[1]
 
             # update fitness
-            def fitness_func(cur_states,dt,cart_bounds,up):
+            def fitness_func(cur_states,dt,cart_bounds,up,force_hist):
 
                 if(up):
                     # incentivise staying close to the center, but not as much as keeping the pendulum up
                     center_component = (-np.absolute(cur_states[j,0]) + cart_bounds[1])/cart_bounds[1]
                     # incentivise being up in the 1st place.
                     height_component = 1
-                    score = (height_component + center_component) * dt
+                    # incentivise smooth force
+                    force_component = -np.std(force_hist)/300
+
+                    # combine components to get score
+                    score = (height_component + center_component + force_component) * dt
                     return score
                 else:
                     return 0
 
-            genomes[j][1].fitness += fitness_func(cur_states,dt,cart_bounds,up)
+            genomes[j][1].fitness += fitness_func(cur_states,dt,cart_bounds,up,force_hists[j][0:i])
 
     # locate fittest agent
     fitnesses = list()
@@ -166,8 +176,9 @@ def run_cart(genomes,config):
     best_timehist = time_hists[best_agent_index]
     best_forcehist = force_hists[best_agent_index]
 
-    # save history to mat_files folder for post analysis.
-    sio.savemat(f'../MATLAB/mat_files/result{generation}.mat', {'th':best_timehist,'tvec':tvec,'fh':best_forcehist})
+    # save every 10th generation
+    if(not generation % 10):
+        sio.savemat(f'../MATLAB/mat_files/result{generation}.mat', {'th':best_timehist,'tvec':tvec,'fh':best_forcehist})
 
 if __name__ == "__main__":
     generation = 0
@@ -186,4 +197,4 @@ if __name__ == "__main__":
     p.add_reporter(stats)
 
     # Run NEAT
-    p.run(run_cart, 10000)
+    p.run(run_cart, 20000)
